@@ -1,0 +1,163 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  SAM Template for QLDB Streams Sample application.
+
+  This template:
+
+  1) Creates a Kinesis Stream
+  2) Creates a Lambda
+  3) Maps lambda to the Kinesis Stream
+  4) Creates RegistrationNotifierKinesisRole which will be used by QLDB to write to Kinesis
+  5) Creates SNS topic and SQS Subscription
+
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Function:
+    Timeout: 3
+
+Metadata:
+  AWS::ServerlessRepo::Application:
+    Name: amazon-qldb-streams-dmv-sample-lambda-python
+    Description: This sample demonstrates how to use QLDB Streams. The sample consists of a lambda function written in python which gets triggered for QLDB Streams and send messages to a SQS queue.
+    Author: Amazon QLDB
+    SpdxLicenseId: Apache-2.0
+    Labels: ['aws_qldb_sample', 'qldb_streams']
+    HomePageUrl: https://github.com/aws-samples/amazon-qldb-streams-dmv-sample-lambda-python
+    SemanticVersion: 0.0.1
+    SourceCodeUrl: https://github.com/aws-samples/amazon-qldb-streams-dmv-sample-lambda-python
+
+Resources:
+
+  RegistrationNotifierLambdaRole: # Used by lambda to read Kinesis Streams, publish sns and send logs to cloudwatch. 
+    Type: AWS::IAM::Role 
+    Properties: 
+      AssumeRolePolicyDocument: 
+        Version: 2012-10-17 
+        Statement: 
+          - Effect: Allow 
+            Principal: 
+              Service: 
+                - lambda.amazonaws.com
+                - qldb.amazonaws.com
+            Action: 
+              - sts:AssumeRole 
+      Path: / 
+      ManagedPolicyArns: 
+          - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole       
+      Policies: 
+        - PolicyName: root 
+          PolicyDocument: 
+            Version: 2012-10-17 
+            Statement: 
+              - Effect: Allow 
+                Action:
+                  - kinesis:ListStreams 
+                  - kinesis:DescribeStream 
+                  - kinesis:GetRecords 
+                  - kinesis:GetShardIterator
+                  - kinesis:PutRecord
+                Resource: !GetAtt RegistrationNotificationStreamKinesis.Arn 
+              - Effect: Allow 
+                Action: 
+                  - 'sns:Publish' 
+                Resource: !Ref RegistrationNotificationSNSTopic
+              - Effect: Allow
+                Action:
+                  - 'sqs:SendMessage'
+                Resource: !GetAtt RegistrationNotifierFailureQueue.Arn
+
+  RegistrationNotifierKinesisRole: # Used by QLDB to write to Kinesis Streams
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: RegistrationNotifierKinesisRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: qldb.amazonaws.com
+          Action: sts:AssumeRole
+      Policies:
+        - PolicyName: QLDBStreamKinesisPermissions
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - kinesis:ListShards
+                  - kinesis:DescribeStream
+                  - kinesis:PutRecord*
+                Resource: !GetAtt RegistrationNotificationStreamKinesis.Arn             
+
+  RegistrationNotifierLambda:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      FunctionName: RegistrationNotifierLambda
+      CodeUri: qldb_streaming_sample/
+      Handler: app.lambda_handler
+      Runtime: python3.7
+      Role: !GetAtt RegistrationNotifierLambdaRole.Arn
+      Events:
+        Stream:
+          Type: Kinesis
+          Properties:
+            Stream: !GetAtt RegistrationNotificationStreamKinesis.Arn
+            StartingPosition: TRIM_HORIZON 
+            MaximumRetryAttempts: 0   
+      Environment:
+        Variables:
+          SNS_ARN: !Ref RegistrationNotificationSNSTopic
+      DeadLetterQueue:
+        Type: SQS
+        TargetArn: !GetAtt RegistrationNotifierFailureQueue.Arn
+
+  RegistrationNotificationStreamKinesis: 
+      Type: AWS::Kinesis::Stream 
+      Properties: 
+          Name: RegistrationNotificationStreamKinesis 
+          RetentionPeriodHours: 168 
+          ShardCount: 1
+
+  RegistrationNotificationSNSTopic:
+    Type: AWS::SNS::Topic
+
+  RegistrationNotifierFailureQueue:
+    Type: AWS::SQS::Queue
+
+  RegistrationNotificationQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: RegistrationNotificationQueue
+
+  AllowSnsToSqsQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - Ref: RegistrationNotificationQueue
+      PolicyDocument:
+        Version: "2012-10-17"
+        Id: "SQSQueuePolicy"
+        Statement:
+          - Resource: !GetAtt RegistrationNotificationQueue.Arn
+            Effect: "Allow"
+            Sid: "Allow-SNS-SendMessage"
+            Action:
+              - "SQS:SendMessage"
+            Principal: "*"
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !Ref RegistrationNotificationSNSTopic
+
+  RegistrationNotificationSNSTopicSubscriptions:
+    Type: 'AWS::SNS::Subscription'
+    Properties:
+      TopicArn: !Ref RegistrationNotificationSNSTopic
+      Endpoint: !GetAtt RegistrationNotificationQueue.Arn
+      Protocol: sqs
+      RawMessageDelivery: 'true'
+
+Outputs:
+  RegistrationNotifierKinesisRole:
+    Description: "IAM Role for QLDB. Will enable QLDB to write to Kinesis Streams"
+    Value: !GetAtt RegistrationNotifierLambdaRole.Arn
