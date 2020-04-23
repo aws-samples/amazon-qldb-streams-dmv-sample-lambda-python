@@ -24,11 +24,11 @@ In case you don't have it setup, Please refer [QLDB DMV Sample App Prequisistes]
 
 SAM requires an S3 bucket to host the source code for Lambda function. We will be using the AWS CLI for creating the bucket. Please read [AWS CLI Configuration](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-configure.html#cli-quick-configuration) for help on how to configure the CLI. 
 
-### Python 3.x
+### Python 3.4 or above
 
-The examples require Python 3.x. Please see the link below for more detail to install Python 3.x:
+The examples require Python 3.4 or above. Please see the link below for more detail to install Python:
 
-* [Python 3.x Installation](https://www.python.org/downloads/)
+* [Python Installation](https://www.python.org/downloads/)
 
 ## Deploying the Lambda Stack.
 
@@ -107,6 +107,13 @@ python insert_document.py
 Refer [Inserting Documents](https://docs.aws.amazon.com/qldb/latest/developerguide/getting-started.python.step-3.html).
 
 After inserting documents into the tables, you should see messages in SQS queue named RegistrationNotificationQueue regarding inserts in `Person` and `VehicleRegistration` Table. You can use Queue Actions -> View/Delete Messages to see the messages.
+
+## Note
+
+* QLDB streams provide an at-least-once delivery guarantee. Each data record that is produced by a QLDB stream is delivered to Kinesis Data Streams at least once. The same records can appear in a Kinesis data stream multiple times. So you must have deduplication logic in the consumer application layer if your use case requires it. For the sake of simplicity, this sample does not implement deduplication.
+
+* This sample does not focus on best practices around using AWS Lambda with Amazon Kinesis. For the sake of simplicity, this sample has configured `ShardCount:1` for the AWS Kinesis Stream.
+For guidance on fine tuning configurations, check [here](https://docs.aws.amazon.com/lambda/latest/dg/with-kinesis.html).
 
 ## Unit Tests
 
