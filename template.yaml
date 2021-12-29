@@ -118,17 +118,28 @@ Resources:
           Name: RegistrationNotificationStreamKinesis 
           RetentionPeriodHours: 168 
           ShardCount: 1
+          StreamEncryption:
+            EncryptionType: KMS
+            KeyId: alias/aws/kinesis
 
   RegistrationNotificationSNSTopic:
     Type: AWS::SNS::Topic
+    Properties:
+      TopicName: RegistrationNotificationSNSTopic
+      KmsMasterKeyId: alias/aws/sns
+
 
   RegistrationNotifierFailureQueue:
     Type: AWS::SQS::Queue
+    Properties:
+      QueueName: RegistrationNotifierFailureQueue
+      KmsMasterKeyId: alias/aws/sqs
 
   RegistrationNotificationQueue:
     Type: AWS::SQS::Queue
     Properties:
       QueueName: RegistrationNotificationQueue
+      KmsMasterKeyId: alias/aws/sqs
 
   AllowSnsToSqsQueuePolicy:
     Type: AWS::SQS::QueuePolicy
